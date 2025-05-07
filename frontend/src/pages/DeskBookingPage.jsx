@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FaCalendarAlt, FaUser, FaBuilding, FaPhone, FaEnvelope, FaFilter } from 'react-icons/fa'
+import { FaCalendarAlt, FaUser, FaBuilding, FaPhone, FaEnvelope, FaFilter, FaInfoCircle } from 'react-icons/fa'
 import { toast } from 'react-toastify'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -14,6 +14,7 @@ const DeskBookingPage = () => {
   const [error, setError] = useState(null)
   const [selectedDepartment, setSelectedDepartment] = useState('ALL')
   const [departments, setDepartments] = useState([])
+  const [deskBookings, setDeskBookings] = useState({})
   
   // State for desk selection and booking
   const [selectedDesk, setSelectedDesk] = useState(null)
@@ -36,10 +37,27 @@ const DeskBookingPage = () => {
     fetchDesks()
   }, [])
 
-  // Filter desks when department changes
+  // Apply department filter when it changes
   useEffect(() => {
     filterDesksByDepartment()
   }, [selectedDepartment, desks])
+
+  // Fetch booking information for all desks
+  const fetchDeskBookings = async () => {
+    try {
+      const response = await deskApi.getBookings()
+      
+      // Create a map of deskId -> booking info
+      const bookingsMap = {}
+      response.data.forEach(booking => {
+        bookingsMap[booking.desk.id] = booking
+      })
+      
+      setDeskBookings(bookingsMap)
+    } catch (err) {
+      console.error('Error fetching desk bookings:', err)
+    }
+  }
 
   const fetchDesks = async () => {
     setLoading(true)
@@ -188,6 +206,7 @@ const DeskBookingPage = () => {
       toast.success('Desk booked successfully! A confirmation email has been sent to your email address.')
       setShowBookingForm(false)
       fetchDesks() // Refresh the desk list
+      fetchDeskBookings() // Refresh desk bookings
       
       // Reset booking form
       setBookingData({
@@ -237,7 +256,7 @@ const DeskBookingPage = () => {
                   desk.status === 'VACANT' 
                     ? 'border-green-500 bg-green-50 hover:bg-green-100 cursor-pointer' 
                     : 'border-red-500 bg-red-50 cursor-not-allowed'
-                } transition-colors duration-200`}
+                } transition-colors duration-200 group`}
               >
                 <div className="text-center">
                   <div className="font-bold">{desk.deskNumber}</div>
@@ -246,6 +265,20 @@ const DeskBookingPage = () => {
                     desk.status === 'VACANT' ? 'bg-green-500' : 'bg-red-500'
                   }`}></div>
                 </div>
+                
+                {/* Tooltip - Always show for BOOKED desks */}
+                {desk.status === 'BOOKED' && (
+                  <div className="hidden group-hover:block absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg w-48 z-10">
+                    <div className="font-bold mb-1 flex items-center">
+                      <FaInfoCircle className="mr-1" /> Booking Information
+                    </div>
+                    <div className="text-xs">
+                      <p><span className="font-semibold">Occupant:</span> {desk.occupantName || 'N/A'}</p>
+                      <p><span className="font-semibold">Department:</span> {desk.occupantDepartment || 'N/A'}</p>
+                    </div>
+                    <div className="absolute left-1/2 transform -translate-x-1/2 top-full w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-gray-800"></div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -344,183 +377,193 @@ const DeskBookingPage = () => {
       
       {/* Booking Form Modal */}
       {showBookingForm && selectedDesk && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <h2 className="text-2xl font-bold mb-4">Book Desk {selectedDesk.deskNumber}</h2>
-              <p className="text-gray-600 mb-6">Department: {selectedDesk.department} | Floor: {selectedDesk.floor}</p>
-              <div className="bg-gray-100 p-4 rounded-lg mb-6">
-                <p className="font-medium">
-                  You are booking desk <span className="text-primary">{selectedDesk.deskNumber}</span>
-                </p>
-                <p className="text-gray-600">
-                  Department: {selectedDesk.department} • Floor: {selectedDesk.floor}
-                </p>
-              </div>
-              <form onSubmit={handleBookingSubmit}>
-                <div className="form-group">
-                  <label className="form-label flex items-center gap-2">
-                    <FaCalendarAlt className="text-primary" /> Date
-                  </label>
-                  <DatePicker
-                    selected={bookingData.bookingDate}
-                    onChange={handleDateChange}
-                    className="form-input"
-                    dateFormat="yyyy-MM-dd"
-                    minDate={new Date()}
-                    required
-                  />
-                </div>
-                
-                <div className="form-group">
-                  <label className="form-label flex items-center gap-2">
-                    <FaUser className="text-primary" /> Your Name
-                  </label>
-                  <input
-                    type="text"
-                    name="bookerName"
-                    value={bookingData.bookerName}
-                    onChange={handleBookingInputChange}
-                    className="form-input"
-                    placeholder="Enter your name"
-                    required
-                  />
-                </div>
-                
-                <div className="form-group">
-                  <label className="form-label flex items-center gap-2">
-                    <FaBuilding className="text-primary" /> Designation
-                  </label>
-                  <input
-                    type="text"
-                    name="designation"
-                    value={bookingData.designation}
-                    onChange={handleBookingInputChange}
-                    className="form-input"
-                    placeholder="Enter your designation"
-                    required
-                  />
-                </div>
-                
-                <div className="form-group">
-                  <label className="form-label flex items-center gap-2">
-                    <FaBuilding className="text-primary" /> Department
-                  </label>
-                  <input
-                    type="text"
-                    name="department"
-                    value={bookingData.department}
-                    onChange={handleBookingInputChange}
-                    className="form-input"
-                    placeholder="Enter your department"
-                    required
-                  />
-                </div>
-                
-                <div className="form-group">
-                  <label className="form-label flex items-center gap-2">
-                    <FaPhone className="text-primary" /> Contact
-                  </label>
-                  <input
-                    type="text"
-                    name="contact"
-                    value={bookingData.contact}
-                    onChange={handleBookingInputChange}
-                    className="form-input"
-                    placeholder="Enter your contact number"
-                    required
-                  />
-                </div>
-                
-                <div className="form-group">
-                  <label className="form-label flex items-center gap-2">
-                    <FaEnvelope className="text-primary" /> Email
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={bookingData.email}
-                    onChange={handleBookingInputChange}
-                    className="form-input"
-                    placeholder="Enter your email"
-                    required
-                  />
-                </div>
-                
-                <div className="form-group">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      name="isForFriend"
-                      checked={bookingData.isForFriend}
-                      onChange={handleBookingInputChange}
-                      className="form-checkbox text-primary"
-                    />
-                    <span>Book for a friend/colleague</span>
-                  </label>
-                </div>
-                
-                {bookingData.isForFriend && (
-                  <div className="bg-blue-50 p-4 rounded-lg mb-4 animate-fadeIn">
-                    <div className="form-group">
-                      <label className="form-label flex items-center gap-2">
-                        <FaUser className="text-primary" /> Friend's Name
-                      </label>
-                      <input
-                        type="text"
-                        name="friendName"
-                        value={bookingData.friendName}
-                        onChange={handleBookingInputChange}
-                        className="form-input"
-                        placeholder="Enter friend's name"
-                        required={bookingData.isForFriend}
-                      />
-                    </div>
-                    
-                    <div className="form-group mb-0">
-                      <label className="form-label flex items-center gap-2">
-                        <FaEnvelope className="text-primary" /> Friend's Email
-                      </label>
-                      <input
-                        type="email"
-                        name="friendEmail"
-                        value={bookingData.friendEmail}
-                        onChange={handleBookingInputChange}
-                        className="form-input"
-                        placeholder="Enter friend's email"
-                        required={bookingData.isForFriend}
-                      />
-                    </div>
-                  </div>
-                )}
-                
-                <div className="mt-6 flex justify-end space-x-4">
-                  <button
-                    type="button"
-                    onClick={closeBookingForm}
-                    className="btn btn-outline"
-                    disabled={submitting}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={submitting}
-                  >
-                    {submitting ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Processing...
-                      </>
-                    ) : 'Book Desk'}
-                  </button>
-                </div>
-              </form>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fadeIn overflow-auto">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md my-8" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="flex justify-between items-center mb-4 sticky top-0 bg-white pt-2">
+              <h2 className="text-2xl font-bold text-primary">Book Desk {selectedDesk.deskNumber}</h2>
+              <button 
+                onClick={() => setShowBookingForm(false)}
+                className="text-gray-500 hover:text-gray-700 focus:outline-none"
+                aria-label="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
+            
+            <div className="bg-gray-100 p-4 rounded-lg mb-6">
+              <p className="font-medium">
+                You are booking desk <span className="text-primary">{selectedDesk.deskNumber}</span>
+              </p>
+              <p className="text-gray-600">
+                Department: {selectedDesk.department} • Floor: {selectedDesk.floor}
+              </p>
+            </div>
+            
+            <form onSubmit={handleBookingSubmit}>
+              <div className="form-group">
+                <label className="form-label flex items-center gap-2">
+                  <FaCalendarAlt className="text-primary" /> Date
+                </label>
+                <DatePicker
+                  selected={bookingData.bookingDate}
+                  onChange={handleDateChange}
+                  className="form-input"
+                  dateFormat="yyyy-MM-dd"
+                  minDate={new Date()}
+                  required
+                />
+              </div>
+              
+              <div className="form-group">
+                <label className="form-label flex items-center gap-2">
+                  <FaUser className="text-primary" /> Your Name
+                </label>
+                <input
+                  type="text"
+                  name="bookerName"
+                  value={bookingData.bookerName}
+                  onChange={handleBookingInputChange}
+                  className="form-input"
+                  placeholder="Enter your name"
+                  required
+                />
+              </div>
+              
+              <div className="form-group">
+                <label className="form-label flex items-center gap-2">
+                  <FaBuilding className="text-primary" /> Designation
+                </label>
+                <input
+                  type="text"
+                  name="designation"
+                  value={bookingData.designation}
+                  onChange={handleBookingInputChange}
+                  className="form-input"
+                  placeholder="Enter your designation"
+                  required
+                />
+              </div>
+              
+              <div className="form-group">
+                <label className="form-label flex items-center gap-2">
+                  <FaBuilding className="text-primary" /> Department
+                </label>
+                <input
+                  type="text"
+                  name="department"
+                  value={bookingData.department}
+                  onChange={handleBookingInputChange}
+                  className="form-input"
+                  placeholder="Enter your department"
+                  required
+                />
+              </div>
+              
+              <div className="form-group">
+                <label className="form-label flex items-center gap-2">
+                  <FaPhone className="text-primary" /> Contact
+                </label>
+                <input
+                  type="text"
+                  name="contact"
+                  value={bookingData.contact}
+                  onChange={handleBookingInputChange}
+                  className="form-input"
+                  placeholder="Enter your contact number"
+                  required
+                />
+              </div>
+              
+              <div className="form-group">
+                <label className="form-label flex items-center gap-2">
+                  <FaEnvelope className="text-primary" /> Email
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={bookingData.email}
+                  onChange={handleBookingInputChange}
+                  className="form-input"
+                  placeholder="Enter your email"
+                  required
+                />
+              </div>
+              
+              <div className="form-group">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="isForFriend"
+                    checked={bookingData.isForFriend}
+                    onChange={handleBookingInputChange}
+                    className="form-checkbox text-primary"
+                  />
+                  <span>Book for a friend/colleague</span>
+                </label>
+              </div>
+              
+              {bookingData.isForFriend && (
+                <div className="bg-blue-50 p-4 rounded-lg mb-4 animate-fadeIn">
+                  <div className="form-group">
+                    <label className="form-label flex items-center gap-2">
+                      <FaUser className="text-primary" /> Friend's Name
+                    </label>
+                    <input
+                      type="text"
+                      name="friendName"
+                      value={bookingData.friendName}
+                      onChange={handleBookingInputChange}
+                      className="form-input"
+                      placeholder="Enter friend's name"
+                      required={bookingData.isForFriend}
+                    />
+                  </div>
+                  
+                  <div className="form-group mb-0">
+                    <label className="form-label flex items-center gap-2">
+                      <FaEnvelope className="text-primary" /> Friend's Email
+                    </label>
+                    <input
+                      type="email"
+                      name="friendEmail"
+                      value={bookingData.friendEmail}
+                      onChange={handleBookingInputChange}
+                      className="form-input"
+                      placeholder="Enter friend's email"
+                      required={bookingData.isForFriend}
+                    />
+                  </div>
+                </div>
+              )}
+              
+              <div className="mt-6 flex justify-end space-x-4">
+                <button
+                  type="button"
+                  onClick={closeBookingForm}
+                  className="btn btn-outline"
+                  disabled={submitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Processing...
+                    </>
+                  ) : 'Book Desk'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FaSearch, FaFilter, FaCalendarAlt, FaClock, FaUser, FaBuilding, FaPhone, FaEnvelope, FaProjectDiagram, FaVideo } from 'react-icons/fa'
+import { FaSearch, FaFilter, FaCalendarAlt, FaClock, FaUser, FaBuilding, FaPhone, FaEnvelope, FaProjectDiagram, FaVideo, FaInfoCircle } from 'react-icons/fa'
 import { toast } from 'react-toastify'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -31,10 +31,28 @@ const MeetingRoomPage = () => {
   })
   const [submitting, setSubmitting] = useState(false)
 
+  // State for room bookings
+  const [roomBookings, setRoomBookings] = useState({})
+
   // Fetch meeting rooms on component mount
   useEffect(() => {
     fetchMeetingRooms()
   }, [])
+
+  // Fetch bookings whenever meeting rooms change
+  useEffect(() => {
+    if (meetingRooms.length > 0) {
+      console.log('Meeting rooms loaded, fetching bookings...');
+      fetchRoomBookings();
+    }
+  }, [meetingRooms]);
+
+  // Add a refresh function to manually fetch data
+  const refreshData = () => {
+    fetchMeetingRooms()
+    fetchRoomBookings()
+    toast.info('Refreshing booking data...')
+  }
 
   // Filter rooms when filter or search changes
   useEffect(() => {
@@ -59,6 +77,51 @@ const MeetingRoomPage = () => {
       setError('Failed to fetch meeting rooms. Please try again later.')
       setLoading(false)
       console.error('Error fetching meeting rooms:', err)
+    }
+  }
+
+  // Fetch booking information for meeting rooms
+  const fetchRoomBookings = async () => {
+    try {
+      if (!meetingRooms || meetingRooms.length === 0) {
+        console.log('No rooms available to fetch bookings for');
+        return;
+      }
+      
+      console.log(`Fetching bookings for ${meetingRooms.length} rooms`);
+      
+      // We need to fetch bookings for each room individually
+      const bookingsMap = {};
+      
+      // Create a promise for each room's bookings
+      const bookingPromises = meetingRooms.map(room => 
+        meetingRoomApi.getBookings({ roomId: room.id })
+          .then(response => {
+            console.log(`Bookings for room ${room.id}:`, response.data);
+            if (response.data && response.data.length > 0) {
+              bookingsMap[room.id] = response.data;
+              // If we found bookings for this room, mark it as booked
+              const roomIndex = meetingRooms.findIndex(r => r.id === room.id);
+              if (roomIndex !== -1 && meetingRooms[roomIndex].status !== 'BOOKED') {
+                console.log(`Marking room ${room.id} as BOOKED based on booking data`);
+                const updatedRooms = [...meetingRooms];
+                updatedRooms[roomIndex] = {...updatedRooms[roomIndex], status: 'BOOKED'};
+                setMeetingRooms(updatedRooms);
+              }
+            }
+          })
+          .catch(err => {
+            console.error(`Error fetching bookings for room ${room.id}:`, err);
+          })
+      );
+      
+      // Wait for all promises to resolve
+      await Promise.all(bookingPromises);
+      
+      console.log('All room bookings:', bookingsMap);
+      setRoomBookings(bookingsMap);
+    } catch (err) {
+      console.error('Error in fetchRoomBookings:', err);
     }
   }
 
@@ -226,6 +289,63 @@ const MeetingRoomPage = () => {
     setShowBookingForm(false)
   }
 
+  const formatDate = (date) => {
+    if (!date) return 'N/A';
+    try {
+      const dateObj = new Date(date);
+      if (isNaN(dateObj.getTime())) return date; // Return original if invalid date
+      const month = dateObj.toLocaleString('default', { month: 'long' });
+      const day = dateObj.getDate();
+      const year = dateObj.getFullYear();
+      return `${month} ${day}, ${year}`;
+    } catch (err) {
+      console.error('Error formatting date:', err);
+      return date; // Return original on error
+    }
+  };
+
+  const formatTime = (time) => {
+    if (!time) return 'N/A';
+    try {
+      // Make sure time is a string
+      const timeStr = String(time);
+      
+      // Handle case where time might be in format "23,12"
+      if (timeStr.includes(',')) {
+        const [hours, minutes] = timeStr.split(',');
+        
+        // Convert to 12-hour format with A.M./P.M.
+        let hour = parseInt(hours, 10);
+        const ampm = hour >= 12 ? 'P.M.' : 'A.M.';
+        hour = hour % 12;
+        hour = hour ? hour : 12; // Convert 0 to 12
+        
+        const formattedMinutes = minutes ? minutes.padStart(2, '0') : '00';
+        return `${hour}:${formattedMinutes} ${ampm}`;
+      }
+      
+      // Check if it has a colon
+      if (!timeStr.includes(':')) {
+        return timeStr; // Return original if not in expected format
+      }
+      
+      const [hours, minutes] = timeStr.split(':');
+      if (!hours || !minutes) return timeStr; // Return original if can't split
+      
+      // Convert to 12-hour format with A.M./P.M.
+      let hour = parseInt(hours, 10);
+      const ampm = hour >= 12 ? 'P.M.' : 'A.M.';
+      hour = hour % 12;
+      hour = hour ? hour : 12; // Convert 0 to 12
+      
+      const formattedTime = `${hour}:${minutes.padStart(2, '0')} ${ampm}`;
+      return formattedTime;
+    } catch (err) {
+      console.error('Error formatting time:', err, 'time value:', time);
+      return String(time || 'N/A'); // Return string version of original on error
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner />
   }
@@ -249,7 +369,7 @@ const MeetingRoomPage = () => {
   return (
     <div className="pt-16 animate-fadeIn">
       <div className="bg-gradient-to-r from-primary to-primary-dark text-white p-8 rounded-lg mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold mb-4">Meeting Room Booking</h1>
+        <h1 className="text-3xl font-bold mb-4">Meeting Room Booking</h1>
         <p className="text-lg opacity-90">Book a meeting room for your team discussions and presentations</p>
       </div>
       
@@ -288,6 +408,12 @@ const MeetingRoomPage = () => {
           />
           <FaSearch className="absolute left-3 top-3 text-gray-400" />
         </div>
+        <button 
+          onClick={refreshData}
+          className="btn btn-primary"
+        >
+          Refresh
+        </button>
       </div>
       
       {/* Room List */}
@@ -345,6 +471,28 @@ const MeetingRoomPage = () => {
                 </div>
               </div>
               
+              {/* Tooltip for booked rooms */}
+              {room.status === 'BOOKED' && (
+                <div className="hidden group-hover:block absolute top-20 left-1/2 transform -translate-x-1/2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg w-56 z-10">
+                  <div className="font-bold mb-1 flex items-center">
+                    <FaInfoCircle className="mr-1" /> Booking Information
+                  </div>
+                  <div className="text-xs">
+                    {roomBookings[room.id] && roomBookings[room.id].length > 0 ? (
+                      roomBookings[room.id].map((booking, index) => (
+                        <div key={index} className={index > 0 ? "mt-2 pt-2 border-t border-gray-600" : ""}>
+                          <p><span className="font-semibold">Date:</span> {formatDate(booking.bookingDate)}</p>
+                          <p><span className="font-semibold">Time:</span> {formatTime(booking.startTime)} - {formatTime(booking.endTime)}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <p>No booking details available</p>
+                    )}
+                  </div>
+                  <div className="absolute left-1/2 transform -translate-x-1/2 bottom-full w-0 h-0 border-l-8 border-r-8 border-b-8 border-l-transparent border-r-transparent border-b-gray-800"></div>
+                </div>
+              )}
+              
               <button 
                 onClick={() => handleBookingClick(room)}
                 className={`btn w-full ${
@@ -363,9 +511,9 @@ const MeetingRoomPage = () => {
       
       {/* Booking Form Modal */}
       {showBookingForm && selectedRoom && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-            <div className="flex justify-between items-center mb-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fadeIn overflow-auto">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md my-8" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="flex justify-between items-center mb-4 sticky top-0 bg-white pt-2">
               <h2 className="text-2xl font-bold text-primary">Book Meeting Room</h2>
               <button 
                 onClick={closeBookingForm}
