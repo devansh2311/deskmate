@@ -25,6 +25,14 @@ public class DeskBooking {
     @NotBlank
     @Size(max = 50)
     private String department;
+    
+    @NotBlank
+    @Size(max = 50)
+    private String designation;
+    
+    @NotBlank
+    @Size(max = 20)
+    private String contact;
 
     @NotBlank
     @Size(max = 50)
@@ -48,20 +56,24 @@ public class DeskBooking {
     public DeskBooking() {
     }
 
-    public DeskBooking(Desk desk, String bookerName, String department, String email, 
+    public DeskBooking(Desk desk, String bookerName, String department, String designation, String contact, String email, 
                       LocalDate bookingDate) {
         this.desk = desk;
         this.bookerName = bookerName;
         this.department = department;
+        this.designation = designation;
+        this.contact = contact;
         this.email = email;
         this.bookingDate = bookingDate;
     }
 
-    public DeskBooking(Desk desk, String bookerName, String department, String email, 
+    public DeskBooking(Desk desk, String bookerName, String department, String designation, String contact, String email, 
                       String friendName, String friendEmail, LocalDate bookingDate) {
         this.desk = desk;
         this.bookerName = bookerName;
         this.department = department;
+        this.designation = designation;
+        this.contact = contact;
         this.email = email;
         this.isForFriend = true;
         this.friendName = friendName;
@@ -99,6 +111,22 @@ public class DeskBooking {
 
     public void setDepartment(String department) {
         this.department = department;
+    }
+    
+    public String getDesignation() {
+        return designation;
+    }
+
+    public void setDesignation(String designation) {
+        this.designation = designation;
+    }
+    
+    public String getContact() {
+        return contact;
+    }
+
+    public void setContact(String contact) {
+        this.contact = contact;
     }
 
     public String getEmail() {

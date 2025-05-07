@@ -21,10 +21,11 @@ const DeskBookingPage = () => {
   const [bookingData, setBookingData] = useState({
     bookerName: '',
     designation: '',
+    department: '',
     contact: '',
     email: '',
     bookingDate: new Date(),
-    bookForFriend: false,
+    isForFriend: false,
     friendName: '',
     friendEmail: ''
   })
@@ -117,7 +118,7 @@ const DeskBookingPage = () => {
     
     // Validate form
     if (!bookingData.bookerName || !bookingData.designation || 
-        !bookingData.contact || !bookingData.email || 
+        !bookingData.department || !bookingData.contact || !bookingData.email || 
         !bookingData.bookingDate) {
       toast.error('Please fill in all required fields')
       return
@@ -138,7 +139,7 @@ const DeskBookingPage = () => {
     }
     
     // Validate friend email if booking for friend
-    if (bookingData.bookForFriend) {
+    if (bookingData.isForFriend) {
       if (!bookingData.friendName || !bookingData.friendEmail) {
         toast.error('Please provide friend\'s name and email')
         return
@@ -175,12 +176,13 @@ const DeskBookingPage = () => {
         },
         bookerName: bookingData.bookerName,
         designation: bookingData.designation,
+        department: bookingData.department,
         contact: bookingData.contact,
         email: bookingData.email,
         bookingDate: formattedDate,
-        bookForFriend: bookingData.bookForFriend,
-        friendName: bookingData.bookForFriend ? bookingData.friendName : null,
-        friendEmail: bookingData.bookForFriend ? bookingData.friendEmail : null
+        isForFriend: bookingData.isForFriend,
+        friendName: bookingData.isForFriend ? bookingData.friendName : null,
+        friendEmail: bookingData.isForFriend ? bookingData.friendEmail : null
       })
       
       toast.success('Desk booked successfully! A confirmation email has been sent to your email address.')
@@ -191,10 +193,11 @@ const DeskBookingPage = () => {
       setBookingData({
         bookerName: '',
         designation: '',
+        department: '',
         contact: '',
         email: '',
         bookingDate: new Date(),
-        bookForFriend: false,
+        isForFriend: false,
         friendName: '',
         friendEmail: ''
       })
@@ -401,6 +404,21 @@ const DeskBookingPage = () => {
                 
                 <div className="form-group">
                   <label className="form-label flex items-center gap-2">
+                    <FaBuilding className="text-primary" /> Department
+                  </label>
+                  <input
+                    type="text"
+                    name="department"
+                    value={bookingData.department}
+                    onChange={handleBookingInputChange}
+                    className="form-input"
+                    placeholder="Enter your department"
+                    required
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label className="form-label flex items-center gap-2">
                     <FaPhone className="text-primary" /> Contact
                   </label>
                   <input
@@ -433,8 +451,8 @@ const DeskBookingPage = () => {
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
-                      name="bookForFriend"
-                      checked={bookingData.bookForFriend}
+                      name="isForFriend"
+                      checked={bookingData.isForFriend}
                       onChange={handleBookingInputChange}
                       className="form-checkbox text-primary"
                     />
@@ -442,7 +460,7 @@ const DeskBookingPage = () => {
                   </label>
                 </div>
                 
-                {bookingData.bookForFriend && (
+                {bookingData.isForFriend && (
                   <div className="bg-blue-50 p-4 rounded-lg mb-4 animate-fadeIn">
                     <div className="form-group">
                       <label className="form-label flex items-center gap-2">
@@ -455,7 +473,7 @@ const DeskBookingPage = () => {
                         onChange={handleBookingInputChange}
                         className="form-input"
                         placeholder="Enter friend's name"
-                        required={bookingData.bookForFriend}
+                        required={bookingData.isForFriend}
                       />
                     </div>
                     
@@ -470,7 +488,7 @@ const DeskBookingPage = () => {
                         onChange={handleBookingInputChange}
                         className="form-input"
                         placeholder="Enter friend's email"
-                        required={bookingData.bookForFriend}
+                        required={bookingData.isForFriend}
                       />
                     </div>
                   </div>
