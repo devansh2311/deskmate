@@ -187,6 +187,64 @@ public class MeetingRoomService {
         }
     }
 
+    /**
+     * Gets the current status of a room for a specific date and time
+     * @param room the meeting room
+     * @param date the date to check
+     * @param time the time to check (HH:MM format)
+     * @return BOOKED if the room has bookings for the date and time, VACANT otherwise
+     */
+    public RoomStatus getRoomStatusForDateTime(MeetingRoom room, LocalDate date, LocalTime time) {
+        try {
+            // Get today's date to filter out past bookings
+            LocalDate today = LocalDate.now();
+            LocalTime currentTime = LocalTime.now();
+            
+            // Only consider current or future dates
+            if (date.isBefore(today) || (date.isEqual(today) && time.isBefore(currentTime))) {
+                // For past dates/times, show room as VACANT since we can't book in the past
+                System.out.println("Date/time " + date + " " + time + " is in the past, showing room " + 
+                                  room.getRoomName() + " as VACANT");
+                return RoomStatus.VACANT;
+            }
+            
+            List<MeetingRoomBooking> bookingsForDate = bookingRepository.findByMeetingRoomAndBookingDate(room, date);
+            System.out.println("Found " + (bookingsForDate != null ? bookingsForDate.size() : 0) + 
+                               " bookings for room " + room.getRoomName() + " on date " + date);
+            
+            // If no bookings found, room is VACANT
+            if (bookingsForDate == null || bookingsForDate.isEmpty()) {
+                System.out.println("No bookings found for room " + room.getRoomName() + " on date " + date + 
+                                  ", marking as VACANT");
+                return RoomStatus.VACANT;
+            }
+            
+            // Check if any booking overlaps with the specified time
+            boolean hasOverlappingBooking = bookingsForDate.stream()
+                .anyMatch(booking -> {
+                    LocalTime bookingStart = booking.getStartTime();
+                    LocalTime bookingEnd = booking.getEndTime();
+                    
+                    // Check if the specified time falls within this booking's time range
+                    boolean overlaps = !time.isBefore(bookingStart) && time.isBefore(bookingEnd);
+                    
+                    if (overlaps) {
+                        System.out.println("Room " + room.getRoomName() + " is booked at " + time + 
+                                          " (booking: " + bookingStart + "-" + bookingEnd + ")");
+                    }
+                    
+                    return overlaps;
+                });
+            
+            return hasOverlappingBooking ? RoomStatus.BOOKED : RoomStatus.VACANT;
+        } catch (Exception e) {
+            // Log the error but return VACANT as a safe default
+            System.err.println("Error checking room status for date and time: " + e.getMessage());
+            e.printStackTrace();
+            return RoomStatus.VACANT;
+        }
+    }
+
     public boolean isRoomAvailable(Long roomId, LocalDate date, LocalTime startTime, LocalTime endTime) {
         Optional<MeetingRoom> roomOpt = meetingRoomRepository.findById(roomId);
         if (roomOpt.isEmpty()) {

@@ -3,8 +3,6 @@ import { FaSearch, FaFilter, FaCalendarAlt, FaClock, FaUser, FaBuilding, FaPhone
 import { toast } from 'react-toastify'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
-import TimePicker from 'react-time-picker'
-import 'react-time-picker/dist/TimePicker.css'
 import { meetingRoomApi } from '../utils/api'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 
@@ -18,6 +16,42 @@ const getTodayInIST = () => {
   return new Date(utcDate.getTime() + IST_TIMEZONE_OFFSET * 60000);
 };
 
+// Helper function to get current time in IST (HH:MM format)
+const getCurrentTimeInIST = () => {
+  const now = getTodayInIST();
+  const hours = now.getHours().toString().padStart(2, '0');
+  const minutes = now.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
+// Format time for display
+const formatTime = (time) => {
+  if (!time) return 'N/A';
+  try {
+    // Handle cases where time might not be a string
+    if (typeof time !== 'string') {
+      return String(time);
+    }
+    
+    // Parse the time string (expected format: HH:MM)
+    const [hours, minutes] = time.split(':').map(Number);
+    
+    // Check if parsing was successful
+    if (isNaN(hours) || isNaN(minutes)) {
+      return time; // Return original if parsing failed
+    }
+    
+    // Format to 12-hour with AM/PM
+    const period = hours >= 12 ? 'P.M.' : 'A.M.';
+    const hours12 = hours % 12 || 12; // Convert 0 to 12 for 12 AM
+    
+    return `${hours12}:${minutes.toString().padStart(2, '0')} ${period}`;
+  } catch (err) {
+    console.error('Error formatting time:', err);
+    return time; // Return original on error
+  }
+};
+
 const MeetingRoomPage = () => {
   // State for meeting rooms and filters
   const [meetingRooms, setMeetingRooms] = useState([])
@@ -27,6 +61,13 @@ const MeetingRoomPage = () => {
   const [activeFilter, setActiveFilter] = useState('ALL')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedDate, setSelectedDate] = useState(getTodayInIST())
+  const [selectedStartTime, setSelectedStartTime] = useState(getCurrentTimeInIST())
+  const [selectedEndTime, setSelectedEndTime] = useState(() => {
+    // Default end time is 1 hour after start time
+    const [hours, minutes] = getCurrentTimeInIST().split(':').map(Number);
+    const endHours = (hours + 1) % 24;
+    return `${endHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  })
   const [selectedRoom, setSelectedRoom] = useState(null)
   const [bookingData, setBookingData] = useState({
     bookerName: '',
@@ -41,10 +82,10 @@ const MeetingRoomPage = () => {
   const [showBookingForm, setShowBookingForm] = useState(false)
   const [roomBookings, setRoomBookings] = useState({})
 
-  // Fetch meeting rooms on component mount
+  // Fetch meeting rooms on component mount or when date/time changes
   useEffect(() => {
     fetchMeetingRooms()
-  }, [selectedDate])
+  }, [selectedDate, selectedStartTime, selectedEndTime])
 
   // Fetch bookings whenever meeting rooms change
   useEffect(() => {
@@ -92,19 +133,30 @@ const MeetingRoomPage = () => {
     }
   }
 
-  // Check availability of rooms for the selected date
+  // Check availability of rooms for the selected date and time range
   const checkRoomsAvailabilityForDate = async (rooms) => {
     try {
       const formattedDate = formatDateToISO(selectedDate);
       
-      // Use the new API endpoint to get room status for the selected date
-      const statusResponse = await meetingRoomApi.getRoomStatusForDate(formattedDate);
-      const roomStatusList = statusResponse.data || [];
+      // Use the API endpoint to check availability for the time range
+      const availabilityPromises = rooms.map(room => 
+        meetingRoomApi.checkAvailability(
+          room.id, 
+          formattedDate, 
+          selectedStartTime, 
+          selectedEndTime
+        ).then(response => ({
+          roomId: room.id,
+          available: response.data
+        }))
+      );
       
-      // Create a map of room IDs to their status
-      const roomStatusMap = {};
-      roomStatusList.forEach(roomStatus => {
-        roomStatusMap[roomStatus.roomId] = roomStatus.status;
+      const availabilityResults = await Promise.all(availabilityPromises);
+      
+      // Create a map of room IDs to their availability
+      const availabilityMap = {};
+      availabilityResults.forEach(result => {
+        availabilityMap[result.roomId] = result.available;
       });
       
       // Get all bookings for the selected date
@@ -120,17 +172,19 @@ const MeetingRoomPage = () => {
         bookingsMap[booking.meetingRoom.id].push(booking);
       });
       
-      // Update room statuses based on the status from the API
+      // Update room statuses based on the availability check
       const updatedRooms = rooms.map(room => {
-        // Use the status from the API if available, otherwise keep the current status
-        const newStatus = roomStatusMap[room.id] || room.status;
+        // If the room is available for the selected time range, mark it as VACANT
+        const isAvailable = availabilityMap[room.id];
         return {
           ...room,
-          status: newStatus
+          status: isAvailable ? 'VACANT' : 'BOOKED'
         };
       });
       
-      console.log('Updated room statuses for date:', formattedDate, updatedRooms.map(r => `${r.roomName}: ${r.status}`));
+      console.log('Updated room statuses for date:', formattedDate, 
+                  'and time range:', selectedStartTime, '-', selectedEndTime, 
+                  updatedRooms.map(r => `${r.roomName}: ${r.status}`));
       
       setMeetingRooms(updatedRooms);
       setFilteredRooms(updatedRooms);
@@ -140,7 +194,7 @@ const MeetingRoomPage = () => {
       fetchRoomBookings();
       
     } catch (err) {
-      console.error('Error checking room availability for date:', err);
+      console.error('Error checking room availability for date and time range:', err);
       // If there's an error, fall back to showing all rooms as available
       const updatedRooms = rooms.map(room => ({
         ...room,
@@ -155,7 +209,25 @@ const MeetingRoomPage = () => {
     }
   };
 
-  // Fetch booking information for meeting rooms - now only for tooltip display
+  // Helper function to check if a time is within a range
+  const isTimeInRange = (timeToCheck, startTime, endTime) => {
+    // Convert all times to minutes for easier comparison
+    const timeToCheckMinutes = convertTimeToMinutes(timeToCheck);
+    const startTimeMinutes = convertTimeToMinutes(startTime);
+    const endTimeMinutes = convertTimeToMinutes(endTime);
+    
+    // Check if the time is within the range (inclusive of start time, exclusive of end time)
+    return timeToCheckMinutes >= startTimeMinutes && timeToCheckMinutes < endTimeMinutes;
+  };
+  
+  // Helper function to convert HH:MM time to minutes
+  const convertTimeToMinutes = (time) => {
+    if (!time) return 0;
+    
+    const [hours, minutes] = time.split(':').map(Number);
+    return (hours * 60) + minutes;
+  };
+
   const fetchRoomBookings = async () => {
     try {
       if (!meetingRooms || meetingRooms.length === 0) {
@@ -225,9 +297,12 @@ const MeetingRoomPage = () => {
 
   const handleBookingClick = (room) => {
     // Set the booking date to the currently selected date in the filter
+    // and set the booking times to the selected time range
     const updatedBookingData = {
       ...bookingData,
-      bookingDate: selectedDate
+      bookingDate: selectedDate,
+      startTime: selectedStartTime,
+      endTime: selectedEndTime
     };
     
     setBookingData(updatedBookingData);
@@ -367,33 +442,6 @@ const MeetingRoomPage = () => {
     }
   };
   
-  const formatTime = (time) => {
-    if (!time) return 'N/A';
-    try {
-      // Handle cases where time might not be a string
-      if (typeof time !== 'string') {
-        return String(time);
-      }
-      
-      // Parse the time string (expected format: HH:MM)
-      const [hours, minutes] = time.split(':').map(Number);
-      
-      // Check if parsing was successful
-      if (isNaN(hours) || isNaN(minutes)) {
-        return time; // Return original if parsing failed
-      }
-      
-      // Format to 12-hour with AM/PM
-      const period = hours >= 12 ? 'P.M.' : 'A.M.';
-      const hours12 = hours % 12 || 12; // Convert 0 to 12 for 12 AM
-      
-      return `${hours12}:${minutes.toString().padStart(2, '0')} ${period}`;
-    } catch (err) {
-      console.error('Error formatting time:', err);
-      return time; // Return original on error
-    }
-  };
-
   const formatDateToISO = (date) => {
     // Create a copy of the date to avoid modifying the original
     const dateCopy = new Date(date);
@@ -408,6 +456,60 @@ const MeetingRoomPage = () => {
     setLoading(true);
     toast.info(`Loading room availability for ${date.toLocaleDateString()}`);
   };
+  
+  const handleStartTimeChange = (time) => {
+    setSelectedStartTime(time);
+    
+    // If end time is before or equal to start time, set end time to 1 hour after start time
+    const [hours, minutes] = time.split(':').map(Number);
+    const startTimeMinutes = (hours * 60) + minutes;
+    const endTimeMinutes = convertTimeToMinutes(selectedEndTime);
+    
+    if (endTimeMinutes <= startTimeMinutes) {
+      const newEndHours = (hours + 1) % 24;
+      const newEndTime = `${newEndHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      setSelectedEndTime(newEndTime);
+    }
+    
+    // Show loading state while fetching new data
+    setLoading(true);
+    toast.info(`Loading room availability for ${formatTime(time)} - ${formatTime(selectedEndTime)}`);
+  };
+  
+  const handleEndTimeChange = (time) => {
+    // If end time is before or equal to start time, don't update
+    const [startHours, startMinutes] = selectedStartTime.split(':').map(Number);
+    const [endHours, endMinutes] = time.split(':').map(Number);
+    
+    const startTimeMinutes = (startHours * 60) + startMinutes;
+    const endTimeMinutes = (endHours * 60) + endMinutes;
+    
+    if (endTimeMinutes <= startTimeMinutes) {
+      toast.warning('End time must be after start time');
+      return;
+    }
+    
+    setSelectedEndTime(time);
+    setLoading(true);
+    toast.info(`Loading room availability for ${formatTime(selectedStartTime)} - ${formatTime(time)}`);
+  };
+
+  // Generate time options in 30-minute intervals
+  const generateTimeOptions = () => {
+    const options = [];
+    for (let hour = 0; hour < 24; hour++) {
+      for (let minute = 0; minute < 60; minute += 30) {
+        const formattedHour = hour.toString().padStart(2, '0');
+        const formattedMinute = minute.toString().padStart(2, '0');
+        const time = `${formattedHour}:${formattedMinute}`;
+        options.push(time);
+      }
+    }
+    return options;
+  };
+
+  // Time options for dropdown
+  const TIME_OPTIONS = generateTimeOptions();
 
   // Add debug info to help diagnose the issue
   useEffect(() => {
@@ -438,11 +540,11 @@ const MeetingRoomPage = () => {
           <h3 className="font-medium">Filter by Availability</h3>
           <div className="ml-auto flex items-center">
             <span className="text-sm text-gray-600 mr-2">Showing availability for:</span>
-            <span className="font-semibold">{selectedDate.toLocaleDateString()}</span>
+            <span className="font-semibold">{selectedDate.toLocaleDateString()} from {formatTime(selectedStartTime)} to {formatTime(selectedEndTime)}</span>
           </div>
         </div>
         
-        <div className="flex flex-wrap gap-4">
+        <div className="flex flex-wrap gap-4 mb-4">
           <div className="flex space-x-2">
             <button
               className={`btn ${activeFilter === 'ALL' ? 'btn-primary' : 'btn-outline'}`}
@@ -463,8 +565,10 @@ const MeetingRoomPage = () => {
               Booked
             </button>
           </div>
-          
-          <div className="relative w-full md:w-64 ml-auto">
+        </div>
+        
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="relative w-full md:w-64">
             <input
               type="text"
               placeholder="Search rooms..."
@@ -490,9 +594,43 @@ const MeetingRoomPage = () => {
             />
           </div>
           
+          <div className="flex items-center space-x-2 bg-gray-50 p-3 rounded-md">
+            <div className="flex flex-col">
+              <label className="text-sm text-gray-600 mb-1">Start Time</label>
+              <select
+                value={selectedStartTime}
+                onChange={(e) => handleStartTimeChange(e.target.value)}
+                className="form-select rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-50"
+              >
+                {TIME_OPTIONS.map((time) => (
+                  <option key={`start-${time}`} value={time}>
+                    {formatTime(time)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="text-gray-400 mx-2">to</div>
+            
+            <div className="flex flex-col">
+              <label className="text-sm text-gray-600 mb-1">End Time</label>
+              <select
+                value={selectedEndTime}
+                onChange={(e) => handleEndTimeChange(e.target.value)}
+                className="form-select rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-50"
+              >
+                {TIME_OPTIONS.map((time) => (
+                  <option key={`end-${time}`} value={time}>
+                    {formatTime(time)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
           <button 
             onClick={refreshData}
-            className="btn btn-primary flex items-center"
+            className="btn btn-primary flex items-center ml-auto"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004 12H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -727,28 +865,34 @@ const MeetingRoomPage = () => {
                   <label className="form-label flex items-center gap-2">
                     <FaClock className="text-primary" /> Start Time
                   </label>
-                  <TimePicker
-                    onChange={(value) => handleTimeChange('startTime', value)}
+                  <select
                     value={bookingData.startTime}
-                    className="form-input"
-                    disableClock
-                    clearIcon={null}
-                    required
-                  />
+                    onChange={(e) => handleTimeChange('startTime', e.target.value)}
+                    className="form-select rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-50"
+                  >
+                    {TIME_OPTIONS.map((time) => (
+                      <option key={`start-${time}`} value={time}>
+                        {formatTime(time)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 
                 <div className="form-group">
                   <label className="form-label flex items-center gap-2">
                     <FaClock className="text-primary" /> End Time
                   </label>
-                  <TimePicker
-                    onChange={(value) => handleTimeChange('endTime', value)}
+                  <select
                     value={bookingData.endTime}
-                    className="form-input"
-                    disableClock
-                    clearIcon={null}
-                    required
-                  />
+                    onChange={(e) => handleTimeChange('endTime', e.target.value)}
+                    className="form-select rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-50"
+                  >
+                    {TIME_OPTIONS.map((time) => (
+                      <option key={`end-${time}`} value={time}>
+                        {formatTime(time)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               

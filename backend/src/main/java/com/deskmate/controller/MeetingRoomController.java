@@ -155,6 +155,27 @@ public class MeetingRoomController {
         return ResponseEntity.ok(roomStatusList);
     }
 
+    @GetMapping("/status-for-datetime")
+    public ResponseEntity<List<Map<String, Object>>> getRoomStatusForDateTime(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.TIME) LocalTime time) {
+        
+        List<MeetingRoom> allRooms = meetingRoomService.getAllMeetingRooms();
+        List<Map<String, Object>> roomStatusList = new ArrayList<>();
+        
+        for (MeetingRoom room : allRooms) {
+            Map<String, Object> roomStatus = new HashMap<>();
+            roomStatus.put("roomId", room.getId());
+            roomStatus.put("roomNumber", room.getRoomNumber());
+            roomStatus.put("roomName", room.getRoomName());
+            roomStatus.put("status", meetingRoomService.getRoomStatusForDateTime(room, date, time));
+            
+            roomStatusList.add(roomStatus);
+        }
+        
+        return ResponseEntity.ok(roomStatusList);
+    }
+
     @DeleteMapping("/bookings/{id}")
     public ResponseEntity<ApiResponse<Void>> cancelBooking(@PathVariable Long id) {
         try {
