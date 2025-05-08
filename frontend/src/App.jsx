@@ -2,11 +2,13 @@ import { Routes, Route } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
 import Navbar from './components/layout/Navbar'
 import LoadingSpinner from './components/ui/LoadingSpinner'
+import ProtectedRoute from './components/auth/ProtectedRoute'
 
 // Lazy load pages for better performance
 const HomePage = lazy(() => import('./pages/HomePage'))
 const MeetingRoomPage = lazy(() => import('./pages/MeetingRoomPage'))
 const DeskBookingPage = lazy(() => import('./pages/DeskBookingPage'))
+const LoginPage = lazy(() => import('./pages/LoginPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 function App() {
@@ -16,9 +18,22 @@ function App() {
       <main className="flex-grow container mx-auto px-4 py-8">
         <Suspense fallback={<LoadingSpinner />}>
           <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/meeting-rooms" element={<MeetingRoomPage />} />
-            <Route path="/desks" element={<DeskBookingPage />} />
+            <Route path="/" element={
+              <ProtectedRoute>
+                <HomePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/meeting-rooms" element={
+              <ProtectedRoute>
+                <MeetingRoomPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/desks" element={
+              <ProtectedRoute>
+                <DeskBookingPage />
+              </ProtectedRoute>
+            } />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
