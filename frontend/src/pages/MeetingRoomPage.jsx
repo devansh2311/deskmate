@@ -149,28 +149,6 @@ const MeetingRoomPage = () => {
 
   const handleFilterChange = (filter) => {
     setActiveFilter(filter)
-    if (filter !== activeFilter) {
-      // If changing from ALL to a specific status, or between statuses, fetch filtered data
-      if (filter !== 'ALL') {
-        fetchFilteredRooms(filter);
-      } else {
-        fetchMeetingRooms();
-      }
-    }
-  }
-
-  const fetchFilteredRooms = async (status) => {
-    setLoading(true)
-    try {
-      const response = await meetingRoomApi.getByStatus(status);
-      setMeetingRooms(response.data)
-      setFilteredRooms(response.data)
-      setLoading(false)
-    } catch (err) {
-      setError('Failed to fetch filtered meeting rooms.')
-      setLoading(false)
-      console.error('Error fetching filtered meeting rooms:', err)
-    }
   }
 
   const handleSearchChange = (e) => {
@@ -180,6 +158,20 @@ const MeetingRoomPage = () => {
   const handleBookingClick = (room) => {
     setSelectedRoom(room)
     setShowBookingForm(true)
+  }
+
+  const closeBookingForm = () => {
+    setShowBookingForm(false)
+    setSelectedRoom(null)
+    setBookingData({
+      bookerName: '',
+      designation: '',
+      contact: '',
+      email: '',
+      bookingDate: new Date(),
+      startTime: '09:00',
+      endTime: '10:00'
+    })
   }
 
   const handleBookingInputChange = (e) => {
@@ -285,10 +277,6 @@ const MeetingRoomPage = () => {
     }
   }
 
-  const closeBookingForm = () => {
-    setShowBookingForm(false)
-  }
-
   const formatDate = (date) => {
     if (!date) return 'N/A';
     try {
@@ -303,46 +291,31 @@ const MeetingRoomPage = () => {
       return date; // Return original on error
     }
   };
-
+  
   const formatTime = (time) => {
     if (!time) return 'N/A';
     try {
-      // Make sure time is a string
-      const timeStr = String(time);
-      
-      // Handle case where time might be in format "23,12"
-      if (timeStr.includes(',')) {
-        const [hours, minutes] = timeStr.split(',');
-        
-        // Convert to 12-hour format with A.M./P.M.
-        let hour = parseInt(hours, 10);
-        const ampm = hour >= 12 ? 'P.M.' : 'A.M.';
-        hour = hour % 12;
-        hour = hour ? hour : 12; // Convert 0 to 12
-        
-        const formattedMinutes = minutes ? minutes.padStart(2, '0') : '00';
-        return `${hour}:${formattedMinutes} ${ampm}`;
+      // Handle cases where time might not be a string
+      if (typeof time !== 'string') {
+        return String(time);
       }
       
-      // Check if it has a colon
-      if (!timeStr.includes(':')) {
-        return timeStr; // Return original if not in expected format
+      // Parse the time string (expected format: HH:MM)
+      const [hours, minutes] = time.split(':').map(Number);
+      
+      // Check if parsing was successful
+      if (isNaN(hours) || isNaN(minutes)) {
+        return time; // Return original if parsing failed
       }
       
-      const [hours, minutes] = timeStr.split(':');
-      if (!hours || !minutes) return timeStr; // Return original if can't split
+      // Format to 12-hour with AM/PM
+      const period = hours >= 12 ? 'P.M.' : 'A.M.';
+      const hours12 = hours % 12 || 12; // Convert 0 to 12 for 12 AM
       
-      // Convert to 12-hour format with A.M./P.M.
-      let hour = parseInt(hours, 10);
-      const ampm = hour >= 12 ? 'P.M.' : 'A.M.';
-      hour = hour % 12;
-      hour = hour ? hour : 12; // Convert 0 to 12
-      
-      const formattedTime = `${hour}:${minutes.padStart(2, '0')} ${ampm}`;
-      return formattedTime;
+      return `${hours12}:${minutes.toString().padStart(2, '0')} ${period}`;
     } catch (err) {
-      console.error('Error formatting time:', err, 'time value:', time);
-      return String(time || 'N/A'); // Return string version of original on error
+      console.error('Error formatting time:', err);
+      return time; // Return original on error
     }
   };
 
@@ -351,69 +324,81 @@ const MeetingRoomPage = () => {
   }
 
   if (error) {
-    return (
-      <div className="text-center py-12 animate-fadeIn">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-2xl mx-auto">
-          <p className="text-red-500 text-xl mb-4">{error}</p>
-          <button 
-            onClick={fetchMeetingRooms} 
-            className="btn btn-primary"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    )
+    return <div className="text-center text-red-500 mt-8">{error}</div>
   }
 
   return (
     <div className="pt-16 animate-fadeIn">
       <div className="bg-gradient-to-r from-primary to-primary-dark text-white p-8 rounded-lg mb-8">
-        <h1 className="text-3xl font-bold mb-4">Meeting Room Booking</h1>
+        <h1 className="text-3xl md:text-4xl font-bold mb-4">Meeting Room Booking</h1>
         <p className="text-lg opacity-90">Book a meeting room for your team discussions and presentations</p>
       </div>
       
       {/* Filters and Search */}
-      <div className="flex flex-col md:flex-row justify-between mb-8 gap-4 bg-white p-4 rounded-lg shadow-md">
-        <div className="flex flex-wrap gap-2">
-          <button 
-            className={`btn ${activeFilter === 'ALL' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => handleFilterChange('ALL')}
-          >
-            All Rooms
-          </button>
-          <button 
-            className={`btn ${activeFilter === 'VACANT' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => handleFilterChange('VACANT')}
-          >
-            <span className="inline-block w-3 h-3 bg-green-500 rounded-full mr-2"></span>
-            Vacant
-          </button>
-          <button 
-            className={`btn ${activeFilter === 'BOOKED' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => handleFilterChange('BOOKED')}
-          >
-            <span className="inline-block w-3 h-3 bg-red-500 rounded-full mr-2"></span>
-            Booked
-          </button>
+      <div className="bg-white p-4 rounded-lg shadow-md mb-8">
+        <div className="flex items-center mb-4">
+          <FaFilter className="text-primary mr-2" />
+          <h3 className="font-medium">Filter by Availability</h3>
         </div>
         
-        <div className="relative w-full md:w-64">
-          <input
-            type="text"
-            placeholder="Search rooms..."
-            className="form-input pl-10"
-            value={searchQuery}
-            onChange={handleSearchChange}
-          />
-          <FaSearch className="absolute left-3 top-3 text-gray-400" />
+        <div className="flex flex-wrap gap-4">
+          <div className="flex space-x-2">
+            <button
+              className={`btn ${activeFilter === 'ALL' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => handleFilterChange('ALL')}
+            >
+              All Rooms
+            </button>
+            <button
+              className={`btn ${activeFilter === 'VACANT' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => handleFilterChange('VACANT')}
+            >
+              Available
+            </button>
+            <button
+              className={`btn ${activeFilter === 'BOOKED' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => handleFilterChange('BOOKED')}
+            >
+              Booked
+            </button>
+          </div>
+          
+          <div className="relative w-full md:w-64 ml-auto">
+            <input
+              type="text"
+              placeholder="Search rooms..."
+              className="form-input pl-10 w-full"
+              value={searchQuery}
+              onChange={handleSearchChange}
+            />
+            <FaSearch className="absolute left-3 top-3 text-gray-400" />
+          </div>
+          
+          <button 
+            onClick={refreshData}
+            className="btn btn-primary flex items-center"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004 12H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
         </div>
-        <button 
-          onClick={refreshData}
-          className="btn btn-primary"
-        >
-          Refresh
-        </button>
+      </div>
+      
+      {/* Legend */}
+      <div className="bg-white p-4 rounded-lg shadow-md mb-8">
+        <h3 className="font-medium mb-2">Room Status</h3>
+        <div className="flex space-x-6">
+          <div className="flex items-center">
+            <div className="w-4 h-4 rounded-full bg-green-500 mr-2"></div>
+            <span>Available</span>
+          </div>
+          <div className="flex items-center">
+            <div className="w-4 h-4 rounded-full bg-red-500 mr-2"></div>
+            <span>Booked</span>
+          </div>
+        </div>
       </div>
       
       {/* Room List */}
@@ -435,77 +420,85 @@ const MeetingRoomPage = () => {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredRooms.map(room => (
-            <div 
-              key={room.id} 
-              className="card relative overflow-hidden group"
-            >
-              <div className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-medium text-white ${
-                room.status === 'VACANT' ? 'bg-green-500' : 'bg-red-500'
-              }`}>
-                {room.status}
-              </div>
-              
-              <h3 className="text-xl font-bold mb-2">{room.roomName}</h3>
-              <p className="text-gray-600 mb-4">Room Number: {room.roomNumber}</p>
-              
-              <div className="mb-6">
-                <div className="flex items-center mb-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                  </svg>
-                  <p className="text-sm text-gray-500">Capacity: {room.capacity} people</p>
-                </div>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {room.hasProjector && (
-                    <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded flex items-center">
-                      <FaProjectDiagram className="mr-1" /> Projector
-                    </span>
-                  )}
-                  {room.hasVideoConference && (
-                    <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded flex items-center">
-                      <FaVideo className="mr-1" /> Video Conference
-                    </span>
-                  )}
-                </div>
-              </div>
-              
-              {/* Tooltip for booked rooms */}
-              {room.status === 'BOOKED' && (
-                <div className="hidden group-hover:block absolute top-20 left-1/2 transform -translate-x-1/2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg w-56 z-10">
-                  <div className="font-bold mb-1 flex items-center">
-                    <FaInfoCircle className="mr-1" /> Booking Information
+        <div>
+          <h2 className="text-2xl font-bold mb-6">Available Meeting Rooms</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredRooms.map(room => (
+              <div 
+                key={room.id} 
+                className={`bg-white rounded-lg shadow-md p-6 border-l-4 group relative
+                  ${room.status === 'VACANT' ? 'border-green-500' : 'border-red-500'}`}
+              >
+                <h3 className="text-xl font-bold mb-2 flex justify-between items-center">
+                  {room.roomName}
+                  <span className={`text-sm px-2 py-1 rounded-full ${
+                    room.status === 'VACANT' 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-red-100 text-red-800'
+                  }`}>
+                    {room.status === 'VACANT' ? 'Available' : 'Booked'}
+                  </span>
+                </h3>
+                
+                <p className="text-gray-600 mb-4">Room Number: {room.roomNumber}</p>
+                
+                <div className="mb-6">
+                  <div className="flex items-center mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                    </svg>
+                    <p className="text-sm text-gray-500">Capacity: {room.capacity} people</p>
                   </div>
-                  <div className="text-xs">
-                    {roomBookings[room.id] && roomBookings[room.id].length > 0 ? (
-                      roomBookings[room.id].map((booking, index) => (
-                        <div key={index} className={index > 0 ? "mt-2 pt-2 border-t border-gray-600" : ""}>
-                          <p><span className="font-semibold">Date:</span> {formatDate(booking.bookingDate)}</p>
-                          <p><span className="font-semibold">Time:</span> {formatTime(booking.startTime)} - {formatTime(booking.endTime)}</p>
-                        </div>
-                      ))
-                    ) : (
-                      <p>No booking details available</p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {room.hasProjector && (
+                      <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded flex items-center">
+                        <FaProjectDiagram className="mr-1" /> Projector
+                      </span>
+                    )}
+                    {room.hasVideoConference && (
+                      <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded flex items-center">
+                        <FaVideo className="mr-1" /> Video Conference
+                      </span>
                     )}
                   </div>
-                  <div className="absolute left-1/2 transform -translate-x-1/2 bottom-full w-0 h-0 border-l-8 border-r-8 border-b-8 border-l-transparent border-r-transparent border-b-gray-800"></div>
                 </div>
-              )}
-              
-              <button 
-                onClick={() => handleBookingClick(room)}
-                className={`btn w-full ${
-                  room.status === 'VACANT' 
-                    ? 'btn-primary' 
-                    : 'bg-gray-300 text-gray-600 cursor-not-allowed hover:bg-gray-300'
-                }`}
-                disabled={room.status !== 'VACANT'}
-              >
-                {room.status === 'VACANT' ? 'Book Now' : 'Unavailable'}
-              </button>
-            </div>
-          ))}
+                
+                {/* Tooltip for booked rooms */}
+                {room.status === 'BOOKED' && (
+                  <div className="hidden group-hover:block absolute top-20 left-1/2 transform -translate-x-1/2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg w-56 z-10">
+                    <div className="font-bold mb-1 flex items-center">
+                      <FaInfoCircle className="mr-1" /> Booking Information
+                    </div>
+                    <div className="text-xs">
+                      {roomBookings[room.id] && roomBookings[room.id].length > 0 ? (
+                        roomBookings[room.id].map((booking, index) => (
+                          <div key={index} className={index > 0 ? "mt-2 pt-2 border-t border-gray-600" : ""}>
+                            <p><span className="font-semibold">Date:</span> {formatDate(booking.bookingDate)}</p>
+                            <p><span className="font-semibold">Time:</span> {formatTime(booking.startTime)} - {formatTime(booking.endTime)}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <p>No booking details available</p>
+                      )}
+                    </div>
+                    <div className="absolute left-1/2 transform -translate-x-1/2 bottom-full w-0 h-0 border-l-8 border-r-8 border-b-8 border-l-transparent border-r-transparent border-b-gray-800"></div>
+                  </div>
+                )}
+                
+                <button 
+                  onClick={() => handleBookingClick(room)}
+                  className={`btn w-full ${
+                    room.status === 'VACANT' 
+                      ? 'btn-primary' 
+                      : 'bg-gray-300 text-gray-600 cursor-not-allowed hover:bg-gray-300'
+                  }`}
+                  disabled={room.status !== 'VACANT'}
+                >
+                  {room.status === 'VACANT' ? 'Book Now' : 'Unavailable'}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       
@@ -656,7 +649,7 @@ const MeetingRoomPage = () => {
                 >
                   {submitting ? (
                     <>
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>

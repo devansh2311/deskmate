@@ -29,27 +29,49 @@ api.interceptors.response.use(
   (error) => {
     const { response } = error;
     
-    if (response) {
-      // Handle specific error status codes
-      switch (response.status) {
-        case 401:
-          toast.error('Session expired. Please login again.');
-          // Could redirect to login page here
-          break;
-        case 403:
-          toast.error('You do not have permission to perform this action.');
-          break;
-        case 404:
-          toast.error('Resource not found.');
-          break;
-        case 500:
-          toast.error('Server error. Please try again later.');
-          break;
-        default:
-          toast.error(response.data?.message || 'Something went wrong.');
+    // Create a unique ID for the error toast based on the URL and error type
+    const url = error.config?.url || 'unknown';
+    const method = error.config?.method || 'unknown';
+    const errorType = response ? response.status : 'network';
+    const toastId = `api-error-${method}-${url}-${errorType}`;
+    
+    // Check if we've already shown this error in the last 5 seconds
+    const now = Date.now();
+    const lastShown = api.lastErrorShown?.[toastId] || 0;
+    const timeSinceLastShown = now - lastShown;
+    
+    // Only show the error if it hasn't been shown in the last 5 seconds
+    if (timeSinceLastShown > 5000) {
+      // Store the time this error was shown
+      api.lastErrorShown = api.lastErrorShown || {};
+      api.lastErrorShown[toastId] = now;
+      
+      if (response) {
+        // Handle specific error status codes
+        switch (response.status) {
+          case 401:
+            toast.error('Session expired. Please login again.', { toastId });
+            // Could redirect to login page here
+            break;
+          case 403:
+            toast.error('You do not have permission to perform this action.', { toastId });
+            break;
+          case 404:
+            toast.error('Resource not found.', { toastId });
+            break;
+          case 500:
+            toast.error('Server error. Please try again later.', { toastId });
+            break;
+          default:
+            toast.error(response.data?.message || 'Something went wrong.', { toastId });
+        }
+      } else {
+        // Only show network error once
+        toast.error('Network error. Please check your connection.', { 
+          toastId: 'network-error',
+          autoClose: 5000
+        });
       }
-    } else {
-      toast.error('Network error. Please check your connection.');
     }
     
     return Promise.reject(error);
