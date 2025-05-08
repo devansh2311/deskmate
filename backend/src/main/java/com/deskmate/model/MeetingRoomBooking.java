@@ -9,7 +9,10 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 @Entity
-@Table(name = "meeting_room_bookings")
+@Table(name = "meeting_room_bookings",
+    indexes = {
+        @Index(name = "idx_room_date", columnList = "meeting_room_id,booking_date")
+    })
 public class MeetingRoomBooking {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

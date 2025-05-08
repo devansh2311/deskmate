@@ -8,6 +8,16 @@ import 'react-time-picker/dist/TimePicker.css'
 import { meetingRoomApi } from '../utils/api'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 
+// Set the default time zone to IST
+const IST_TIMEZONE_OFFSET = 330; // IST is UTC+5:30 (330 minutes)
+
+// Helper function to get today's date in IST
+const getTodayInIST = () => {
+  const date = new Date();
+  const utcDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+  return new Date(utcDate.getTime() + IST_TIMEZONE_OFFSET * 60000);
+};
+
 const MeetingRoomPage = () => {
   // State for meeting rooms and filters
   const [meetingRooms, setMeetingRooms] = useState([])
@@ -16,9 +26,7 @@ const MeetingRoomPage = () => {
   const [error, setError] = useState(null)
   const [activeFilter, setActiveFilter] = useState('ALL')
   const [searchQuery, setSearchQuery] = useState('')
-  
-  // State for booking form
-  const [showBookingForm, setShowBookingForm] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(getTodayInIST())
   const [selectedRoom, setSelectedRoom] = useState(null)
   const [bookingData, setBookingData] = useState({
     bookerName: '',
@@ -30,27 +38,26 @@ const MeetingRoomPage = () => {
     endTime: '10:00'
   })
   const [submitting, setSubmitting] = useState(false)
-
-  // State for room bookings
+  const [showBookingForm, setShowBookingForm] = useState(false)
   const [roomBookings, setRoomBookings] = useState({})
 
   // Fetch meeting rooms on component mount
   useEffect(() => {
     fetchMeetingRooms()
-  }, [])
+  }, [selectedDate])
 
   // Fetch bookings whenever meeting rooms change
   useEffect(() => {
     if (meetingRooms.length > 0) {
       console.log('Meeting rooms loaded, fetching bookings...');
-      fetchRoomBookings();
+      // We no longer need to call fetchRoomBookings here as it's handled by checkRoomsAvailabilityForDate
+      // fetchRoomBookings();
     }
   }, [meetingRooms]);
 
   // Add a refresh function to manually fetch data
   const refreshData = () => {
     fetchMeetingRooms()
-    fetchRoomBookings()
     toast.info('Refreshing booking data...')
   }
 
@@ -73,6 +80,11 @@ const MeetingRoomPage = () => {
       setMeetingRooms(response.data)
       setFilteredRooms(response.data)
       setLoading(false)
+      
+      // After loading rooms, check their availability for the selected date
+      if (response.data.length > 0) {
+        checkRoomsAvailabilityForDate(response.data);
+      }
     } catch (err) {
       setError('Failed to fetch meeting rooms. Please try again later.')
       setLoading(false)
@@ -80,7 +92,70 @@ const MeetingRoomPage = () => {
     }
   }
 
-  // Fetch booking information for meeting rooms
+  // Check availability of rooms for the selected date
+  const checkRoomsAvailabilityForDate = async (rooms) => {
+    try {
+      const formattedDate = formatDateToISO(selectedDate);
+      
+      // Use the new API endpoint to get room status for the selected date
+      const statusResponse = await meetingRoomApi.getRoomStatusForDate(formattedDate);
+      const roomStatusList = statusResponse.data || [];
+      
+      // Create a map of room IDs to their status
+      const roomStatusMap = {};
+      roomStatusList.forEach(roomStatus => {
+        roomStatusMap[roomStatus.roomId] = roomStatus.status;
+      });
+      
+      // Get all bookings for the selected date
+      const bookingsResponse = await meetingRoomApi.getBookings({ date: formattedDate });
+      const dateBookings = bookingsResponse.data || [];
+      
+      // Create a map of room IDs to their bookings
+      const bookingsMap = {};
+      dateBookings.forEach(booking => {
+        if (!bookingsMap[booking.meetingRoom.id]) {
+          bookingsMap[booking.meetingRoom.id] = [];
+        }
+        bookingsMap[booking.meetingRoom.id].push(booking);
+      });
+      
+      // Update room statuses based on the status from the API
+      const updatedRooms = rooms.map(room => {
+        // Use the status from the API if available, otherwise keep the current status
+        const newStatus = roomStatusMap[room.id] || room.status;
+        return {
+          ...room,
+          status: newStatus
+        };
+      });
+      
+      console.log('Updated room statuses for date:', formattedDate, updatedRooms.map(r => `${r.roomName}: ${r.status}`));
+      
+      setMeetingRooms(updatedRooms);
+      setFilteredRooms(updatedRooms);
+      setRoomBookings(bookingsMap);
+      
+      // Also fetch all bookings for each room to show in tooltips
+      fetchRoomBookings();
+      
+    } catch (err) {
+      console.error('Error checking room availability for date:', err);
+      // If there's an error, fall back to showing all rooms as available
+      const updatedRooms = rooms.map(room => ({
+        ...room,
+        status: 'VACANT'
+      }));
+      setMeetingRooms(updatedRooms);
+      setFilteredRooms(updatedRooms);
+      setRoomBookings({});
+      
+      // Show a toast message about the error
+      toast.error('Failed to load room availability. Showing all rooms as available.');
+    }
+  };
+
+  // Fetch booking information for meeting rooms - now only for tooltip display
   const fetchRoomBookings = async () => {
     try {
       if (!meetingRooms || meetingRooms.length === 0) {
@@ -99,15 +174,8 @@ const MeetingRoomPage = () => {
           .then(response => {
             console.log(`Bookings for room ${room.id}:`, response.data);
             if (response.data && response.data.length > 0) {
+              // Store all bookings for tooltip display
               bookingsMap[room.id] = response.data;
-              // If we found bookings for this room, mark it as booked
-              const roomIndex = meetingRooms.findIndex(r => r.id === room.id);
-              if (roomIndex !== -1 && meetingRooms[roomIndex].status !== 'BOOKED') {
-                console.log(`Marking room ${room.id} as BOOKED based on booking data`);
-                const updatedRooms = [...meetingRooms];
-                updatedRooms[roomIndex] = {...updatedRooms[roomIndex], status: 'BOOKED'};
-                setMeetingRooms(updatedRooms);
-              }
             }
           })
           .catch(err => {
@@ -156,8 +224,15 @@ const MeetingRoomPage = () => {
   }
 
   const handleBookingClick = (room) => {
-    setSelectedRoom(room)
-    setShowBookingForm(true)
+    // Set the booking date to the currently selected date in the filter
+    const updatedBookingData = {
+      ...bookingData,
+      bookingDate: selectedDate
+    };
+    
+    setBookingData(updatedBookingData);
+    setSelectedRoom(room);
+    setShowBookingForm(true);
   }
 
   const closeBookingForm = () => {
@@ -222,7 +297,7 @@ const MeetingRoomPage = () => {
     }
     
     // Format date and time for API
-    const formattedDate = bookingData.bookingDate.toISOString().split('T')[0]
+    const formattedDate = formatDateToISO(bookingData.bookingDate);
     
     setSubmitting(true)
     
@@ -319,6 +394,28 @@ const MeetingRoomPage = () => {
     }
   };
 
+  const formatDateToISO = (date) => {
+    // Create a copy of the date to avoid modifying the original
+    const dateCopy = new Date(date);
+    return dateCopy.toISOString().split('T')[0];
+  };
+
+  const handleDateFilterChange = (date) => {
+    // Ensure the date is treated as IST
+    setSelectedDate(date);
+    
+    // Show loading state while fetching new data
+    setLoading(true);
+    toast.info(`Loading room availability for ${date.toLocaleDateString()}`);
+  };
+
+  // Add debug info to help diagnose the issue
+  useEffect(() => {
+    if (meetingRooms.length > 0) {
+      console.log('Current room statuses:', meetingRooms.map(r => `${r.roomName} (${r.id}): ${r.status}`));
+    }
+  }, [meetingRooms]);
+
   if (loading) {
     return <LoadingSpinner />
   }
@@ -339,6 +436,10 @@ const MeetingRoomPage = () => {
         <div className="flex items-center mb-4">
           <FaFilter className="text-primary mr-2" />
           <h3 className="font-medium">Filter by Availability</h3>
+          <div className="ml-auto flex items-center">
+            <span className="text-sm text-gray-600 mr-2">Showing availability for:</span>
+            <span className="font-semibold">{selectedDate.toLocaleDateString()}</span>
+          </div>
         </div>
         
         <div className="flex flex-wrap gap-4">
@@ -372,6 +473,21 @@ const MeetingRoomPage = () => {
               onChange={handleSearchChange}
             />
             <FaSearch className="absolute left-3 top-3 text-gray-400" />
+          </div>
+          
+          <div className="flex items-center">
+            <FaCalendarAlt className="text-primary mr-2" />
+            <DatePicker
+              selected={selectedDate}
+              onChange={handleDateFilterChange}
+              className="form-input"
+              dateFormat="yyyy-MM-dd"
+              minDate={getTodayInIST()}
+              showMonthDropdown
+              showYearDropdown
+              dropdownMode="select"
+              placeholderText="Select date"
+            />
           </div>
           
           <button 
@@ -475,6 +591,9 @@ const MeetingRoomPage = () => {
                           <div key={index} className={index > 0 ? "mt-2 pt-2 border-t border-gray-600" : ""}>
                             <p><span className="font-semibold">Date:</span> {formatDate(booking.bookingDate)}</p>
                             <p><span className="font-semibold">Time:</span> {formatTime(booking.startTime)} - {formatTime(booking.endTime)}</p>
+                            {formatDateToISO(selectedDate) === booking.bookingDate && (
+                              <p className="text-yellow-300 font-semibold mt-1">Booked for selected date</p>
+                            )}
                           </div>
                         ))
                       ) : (

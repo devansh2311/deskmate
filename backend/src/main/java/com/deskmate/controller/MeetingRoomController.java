@@ -16,7 +16,10 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/meeting-rooms")
@@ -130,6 +133,26 @@ public class MeetingRoomController {
         }
         
         return ResponseEntity.badRequest().build();
+    }
+
+    @GetMapping("/status-for-date")
+    public ResponseEntity<List<Map<String, Object>>> getRoomStatusForDate(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        
+        List<MeetingRoom> allRooms = meetingRoomService.getAllMeetingRooms();
+        List<Map<String, Object>> roomStatusList = new ArrayList<>();
+        
+        for (MeetingRoom room : allRooms) {
+            Map<String, Object> roomStatus = new HashMap<>();
+            roomStatus.put("roomId", room.getId());
+            roomStatus.put("roomNumber", room.getRoomNumber());
+            roomStatus.put("roomName", room.getRoomName());
+            roomStatus.put("status", meetingRoomService.getRoomStatusForDate(room, date));
+            
+            roomStatusList.add(roomStatus);
+        }
+        
+        return ResponseEntity.ok(roomStatusList);
     }
 
     @DeleteMapping("/bookings/{id}")

@@ -89,6 +89,7 @@ export const meetingRoomApi = {
   delete: (id) => api.delete(`/meeting-rooms/${id}`),
   checkAvailability: (roomId, date, startTime, endTime) => 
     api.get(`/meeting-rooms/available?roomId=${roomId}&date=${date}&startTime=${startTime}&endTime=${endTime}`),
+  getRoomStatusForDate: (date) => api.get(`/meeting-rooms/status-for-date?date=${date}`),
   book: (bookingData) => api.post('/meeting-rooms/bookings', bookingData),
   getBookings: (params) => api.get('/meeting-rooms/bookings', { params }),
   cancelBooking: (id) => api.delete(`/meeting-rooms/bookings/${id}`),

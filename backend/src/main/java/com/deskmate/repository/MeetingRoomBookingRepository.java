@@ -21,6 +21,11 @@ public interface MeetingRoomBookingRepository extends JpaRepository<MeetingRoomB
     
     List<MeetingRoomBooking> findByEmailSent(boolean emailSent);
     
+    @Query("SELECT b FROM MeetingRoomBooking b WHERE b.meetingRoom = :room AND b.bookingDate = :date")
+    List<MeetingRoomBooking> findByMeetingRoomAndBookingDate(
+            @Param("room") MeetingRoom room, 
+            @Param("date") LocalDate date);
+    
     @Query("SELECT b FROM MeetingRoomBooking b WHERE b.meetingRoom = :room AND b.bookingDate = :date " +
            "AND ((b.startTime <= :endTime AND b.endTime >= :startTime))")
     List<MeetingRoomBooking> findOverlappingBookings(

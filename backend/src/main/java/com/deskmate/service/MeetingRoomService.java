@@ -73,11 +73,8 @@ public class MeetingRoomService {
             throw new Exception("Meeting room is already booked for the requested time");
         }
 
-        // Update room status to BOOKED
-        meetingRoom.setStatus(RoomStatus.BOOKED);
-        meetingRoomRepository.save(meetingRoom);
-
-        // Save the booking
+        // Save the booking without changing the room status
+        // The room's status will be determined dynamically based on bookings
         MeetingRoomBooking savedBooking = bookingRepository.save(booking);
 
         // Send confirmation email
@@ -110,18 +107,84 @@ public class MeetingRoomService {
         MeetingRoomBooking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new Exception("Booking not found"));
 
-        // Update room status to VACANT if this is the last booking for the room on this date
-        MeetingRoom meetingRoom = booking.getMeetingRoom();
-        List<MeetingRoomBooking> otherBookings = bookingRepository.findByMeetingRoom(meetingRoom);
-        otherBookings.removeIf(b -> b.getId().equals(bookingId));
+        // Delete the booking without changing the room status
+        // The room's status will be determined dynamically based on bookings
+        bookingRepository.deleteById(bookingId);
+    }
 
-        if (otherBookings.isEmpty()) {
-            meetingRoom.setStatus(RoomStatus.VACANT);
-            meetingRoomRepository.save(meetingRoom);
+    /**
+     * Determines if a room is booked for a specific date
+     * @param roomId the room ID
+     * @param date the date to check
+     * @return true if the room has any bookings for the date, false otherwise
+     */
+    public boolean isRoomBookedForDate(Long roomId, LocalDate date) {
+        Optional<MeetingRoom> roomOpt = meetingRoomRepository.findById(roomId);
+        if (roomOpt.isEmpty()) {
+            return false;
         }
 
-        // Delete the booking
-        bookingRepository.deleteById(bookingId);
+        MeetingRoom room = roomOpt.get();
+        List<MeetingRoomBooking> bookingsForDate = bookingRepository.findByMeetingRoomAndBookingDate(room, date);
+        
+        return !bookingsForDate.isEmpty();
+    }
+
+    /**
+     * Gets the current status of a room for a specific date
+     * @param room the meeting room
+     * @param date the date to check
+     * @return BOOKED if the room has bookings for the date, VACANT otherwise
+     */
+    public RoomStatus getRoomStatusForDate(MeetingRoom room, LocalDate date) {
+        try {
+            // Get today's date to filter out past bookings
+            LocalDate today = LocalDate.now();
+            
+            // Only consider current or future dates
+            if (date.isBefore(today)) {
+                // For past dates, show room as VACANT since we can't book in the past anyway
+                System.out.println("Date " + date + " is in the past, showing room " + room.getRoomName() + " as VACANT");
+                return RoomStatus.VACANT;
+            }
+            
+            List<MeetingRoomBooking> bookingsForDate = bookingRepository.findByMeetingRoomAndBookingDate(room, date);
+            System.out.println("Found " + (bookingsForDate != null ? bookingsForDate.size() : 0) + 
+                               " bookings for room " + room.getRoomName() + " on date " + date);
+            
+            // If no bookings found or all bookings are in the past, room is VACANT
+            if (bookingsForDate == null || bookingsForDate.isEmpty()) {
+                System.out.println("No bookings found for room " + room.getRoomName() + " on date " + date + ", marking as VACANT");
+                return RoomStatus.VACANT;
+            }
+            
+            // If date is today, only consider bookings that haven't ended yet
+            if (date.isEqual(today)) {
+                LocalTime currentTime = LocalTime.now();
+                
+                // Check if there are any current or future bookings for today
+                boolean hasCurrentOrFutureBookings = bookingsForDate.stream()
+                    .anyMatch(booking -> booking.getEndTime().isAfter(currentTime));
+                
+                System.out.println("Today is " + today + ", current time is " + currentTime + 
+                                  ", room " + room.getRoomName() + " has " + 
+                                  (hasCurrentOrFutureBookings ? "current/future" : "only past") + 
+                                  " bookings, marking as " + 
+                                  (hasCurrentOrFutureBookings ? "BOOKED" : "VACANT"));
+                
+                return hasCurrentOrFutureBookings ? RoomStatus.BOOKED : RoomStatus.VACANT;
+            }
+            
+            // For future dates, if there are any bookings, the room is BOOKED
+            System.out.println("Date " + date + " is in the future, room " + room.getRoomName() + 
+                              " has bookings, marking as BOOKED");
+            return RoomStatus.BOOKED;
+        } catch (Exception e) {
+            // Log the error but return VACANT as a safe default
+            System.err.println("Error checking room status for date: " + e.getMessage());
+            e.printStackTrace();
+            return RoomStatus.VACANT;
+        }
     }
 
     public boolean isRoomAvailable(Long roomId, LocalDate date, LocalTime startTime, LocalTime endTime) {
