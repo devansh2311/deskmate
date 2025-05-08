@@ -6,6 +6,16 @@ import 'react-datepicker/dist/react-datepicker.css'
 import { deskApi } from '../utils/api'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 
+// Set the default time zone to IST
+const IST_TIMEZONE_OFFSET = 330; // IST is UTC+5:30 (330 minutes)
+
+// Helper function to get today's date in IST
+const getTodayInIST = () => {
+  const date = new Date();
+  const utcDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+  return new Date(utcDate.getTime() + IST_TIMEZONE_OFFSET * 60000);
+};
+
 const DeskBookingPage = () => {
   // State for desks and filters
   const [desks, setDesks] = useState([])
@@ -15,6 +25,7 @@ const DeskBookingPage = () => {
   const [selectedDepartment, setSelectedDepartment] = useState('ALL')
   const [departments, setDepartments] = useState([])
   const [deskBookings, setDeskBookings] = useState({})
+  const [selectedDate, setSelectedDate] = useState(getTodayInIST())
   
   // State for desk selection and booking
   const [selectedDesk, setSelectedDesk] = useState(null)
@@ -25,27 +36,35 @@ const DeskBookingPage = () => {
     department: '',
     contact: '',
     email: '',
-    bookingDate: new Date(),
+    bookingDate: getTodayInIST(),
     isForFriend: false,
     friendName: '',
     friendEmail: ''
   })
   const [submitting, setSubmitting] = useState(false)
 
-  // Fetch desks on component mount
+  // Fetch desks on component mount or when selected date changes
   useEffect(() => {
     fetchDesks()
-  }, [])
+  }, [selectedDate])
 
   // Apply department filter when it changes
   useEffect(() => {
     filterDesksByDepartment()
   }, [selectedDepartment, desks])
 
-  // Fetch booking information for all desks
+  // Format date to ISO string
+  const formatDateToISO = (date) => {
+    // Create a copy of the date to avoid modifying the original
+    const dateCopy = new Date(date);
+    return dateCopy.toISOString().split('T')[0];
+  };
+
+  // Fetch booking information for all desks for the selected date
   const fetchDeskBookings = async () => {
     try {
-      const response = await deskApi.getBookings()
+      const formattedDate = formatDateToISO(selectedDate);
+      const response = await deskApi.getBookings({ date: formattedDate })
       
       // Create a map of deskId -> booking info
       const bookingsMap = {}
@@ -62,13 +81,16 @@ const DeskBookingPage = () => {
   const fetchDesks = async () => {
     setLoading(true)
     try {
+      // Get all desks first
       const response = await deskApi.getAll()
-      setDesks(response.data)
-      setFilteredDesks(response.data)
+      const allDesks = response.data
       
       // Extract unique departments
-      const uniqueDepartments = [...new Set(response.data.map(desk => desk.department))]
+      const uniqueDepartments = [...new Set(allDesks.map(desk => desk.department))]
       setDepartments(uniqueDepartments)
+      
+      // Check desk availability for the selected date
+      await checkDesksAvailabilityForDate(allDesks)
       
       setLoading(false)
     } catch (err) {
@@ -77,6 +99,63 @@ const DeskBookingPage = () => {
       console.error('Error fetching desks:', err)
     }
   }
+
+  // Check availability of desks for the selected date
+  const checkDesksAvailabilityForDate = async (desks) => {
+    try {
+      const formattedDate = formatDateToISO(selectedDate);
+      
+      // Use the new API endpoint to get desk status for the selected date
+      const statusResponse = await deskApi.getDeskStatusForDate(formattedDate);
+      const deskStatusList = statusResponse.data || [];
+      
+      // Create a map of desk IDs to their status
+      const deskStatusMap = {};
+      deskStatusList.forEach(deskStatus => {
+        deskStatusMap[deskStatus.deskId] = deskStatus.status;
+      });
+      
+      // Get all bookings for the selected date
+      const bookingsResponse = await deskApi.getBookings({ date: formattedDate });
+      const dateBookings = bookingsResponse.data || [];
+      
+      // Create a map of desk IDs to their bookings
+      const bookingsMap = {};
+      dateBookings.forEach(booking => {
+        bookingsMap[booking.desk.id] = booking;
+      });
+      
+      // Update desk statuses based on the status from the API
+      const updatedDesks = desks.map(desk => {
+        // Use the status from the API if available, otherwise keep the current status
+        const newStatus = deskStatusMap[desk.id] || desk.status;
+        return {
+          ...desk,
+          status: newStatus
+        };
+      });
+      
+      console.log('Updated desk statuses for date:', formattedDate, updatedDesks.map(d => `${d.deskNumber}: ${d.status}`));
+      
+      setDesks(updatedDesks);
+      setFilteredDesks(updatedDesks);
+      setDeskBookings(bookingsMap);
+      
+    } catch (err) {
+      console.error('Error checking desk availability for date:', err);
+      // If there's an error, fall back to showing all desks as available
+      const updatedDesks = desks.map(desk => ({
+        ...desk,
+        status: 'VACANT'
+      }));
+      setDesks(updatedDesks);
+      setFilteredDesks(updatedDesks);
+      setDeskBookings({});
+      
+      // Show a toast message about the error
+      toast.error('Failed to load desk availability. Showing all desks as available.');
+    }
+  };
 
   const filterDesksByDepartment = () => {
     if (selectedDepartment === 'ALL') {
@@ -91,12 +170,26 @@ const DeskBookingPage = () => {
     setSelectedDepartment(department)
   }
 
+  const handleDateFilterChange = (date) => {
+    // Ensure the date is treated as IST
+    setSelectedDate(date);
+    
+    // Show loading state while fetching new data
+    setLoading(true);
+    toast.info(`Loading desk availability for ${date.toLocaleDateString()}`);
+  };
+
   const handleDeskClick = (desk) => {
     if (desk.status === 'VACANT') {
       setSelectedDesk(desk)
+      // Set the booking date to the currently selected date in the filter
+      setBookingData(prev => ({
+        ...prev,
+        bookingDate: selectedDate
+      }))
       setShowBookingForm(true)
     } else {
-      toast.info(`Desk ${desk.deskNumber} is already booked for today.`)
+      toast.info(`Desk ${desk.deskNumber} is already booked for the selected date.`)
     }
   }
 
@@ -120,7 +213,7 @@ const DeskBookingPage = () => {
 
   const checkDeskAvailability = async (deskId, date) => {
     try {
-      const formattedDate = date.toISOString().split('T')[0]
+      const formattedDate = formatDateToISO(date)
       const response = await deskApi.checkAvailability(deskId, formattedDate)
       
       if (!response.data) {
@@ -170,7 +263,7 @@ const DeskBookingPage = () => {
     }
     
     // Format date for API
-    const formattedDate = bookingData.bookingDate.toISOString().split('T')[0]
+    const formattedDate = formatDateToISO(bookingData.bookingDate)
     
     setSubmitting(true)
     
@@ -206,7 +299,6 @@ const DeskBookingPage = () => {
       toast.success('Desk booked successfully! A confirmation email has been sent to your email address.')
       setShowBookingForm(false)
       fetchDesks() // Refresh the desk list
-      fetchDeskBookings() // Refresh desk bookings
       
       // Reset booking form
       setBookingData({
@@ -215,11 +307,12 @@ const DeskBookingPage = () => {
         department: '',
         contact: '',
         email: '',
-        bookingDate: new Date(),
+        bookingDate: selectedDate,
         isForFriend: false,
         friendName: '',
         friendEmail: ''
       })
+      
     } catch (err) {
       toast.error(err.response?.data || 'Failed to book desk')
       console.error('Error booking desk:', err)
@@ -267,14 +360,15 @@ const DeskBookingPage = () => {
                 </div>
                 
                 {/* Tooltip - Always show for BOOKED desks */}
-                {desk.status === 'BOOKED' && (
+                {desk.status === 'BOOKED' && deskBookings[desk.id] && (
                   <div className="hidden group-hover:block absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg w-48 z-10">
                     <div className="font-bold mb-1 flex items-center">
                       <FaInfoCircle className="mr-1" /> Booking Information
                     </div>
                     <div className="text-xs">
-                      <p><span className="font-semibold">Occupant:</span> {desk.occupantName || 'N/A'}</p>
-                      <p><span className="font-semibold">Department:</span> {desk.occupantDepartment || 'N/A'}</p>
+                      <p><span className="font-semibold">Occupant:</span> {deskBookings[desk.id].bookerName || 'N/A'}</p>
+                      <p><span className="font-semibold">Department:</span> {deskBookings[desk.id].department || 'N/A'}</p>
+                      <p><span className="font-semibold">Date:</span> {new Date(deskBookings[desk.id].bookingDate).toLocaleDateString()}</p>
                     </div>
                     <div className="absolute left-1/2 transform -translate-x-1/2 top-full w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-gray-800"></div>
                   </div>
@@ -319,8 +413,13 @@ const DeskBookingPage = () => {
         <div className="flex items-center mb-2">
           <FaFilter className="text-primary mr-2" />
           <h3 className="font-medium">Filter by Department</h3>
+          <div className="ml-auto flex items-center">
+            <span className="text-sm text-gray-600 mr-2">Showing availability for:</span>
+            <span className="font-semibold">{selectedDate.toLocaleDateString()}</span>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2 mt-2">
+        
+        <div className="flex flex-wrap gap-2 mt-2 mb-4">
           <button
             className={`btn ${selectedDepartment === 'ALL' ? 'btn-primary' : 'btn-outline'}`}
             onClick={() => handleDepartmentChange('ALL')}
@@ -336,6 +435,33 @@ const DeskBookingPage = () => {
               {department}
             </button>
           ))}
+        </div>
+        
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center">
+            <FaCalendarAlt className="text-primary mr-2" />
+            <DatePicker
+              selected={selectedDate}
+              onChange={handleDateFilterChange}
+              className="form-input"
+              dateFormat="yyyy-MM-dd"
+              minDate={getTodayInIST()}
+              showMonthDropdown
+              showYearDropdown
+              dropdownMode="select"
+              placeholderText="Select date"
+            />
+          </div>
+          
+          <button 
+            onClick={fetchDesks}
+            className="btn btn-primary flex items-center"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004 12H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
         </div>
       </div>
       
@@ -411,7 +537,7 @@ const DeskBookingPage = () => {
                   onChange={handleDateChange}
                   className="form-input"
                   dateFormat="yyyy-MM-dd"
-                  minDate={new Date()}
+                  minDate={getTodayInIST()}
                   required
                 />
               </div>

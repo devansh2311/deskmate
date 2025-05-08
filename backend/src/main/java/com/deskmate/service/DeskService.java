@@ -154,4 +154,20 @@ public class DeskService {
 
         return existingBookings.isEmpty();
     }
+    
+    /**
+     * Get the status of a desk for a specific date
+     * @param desk The desk to check
+     * @param date The date to check
+     * @return The status of the desk (VACANT or BOOKED)
+     */
+    public DeskStatus getDeskStatusForDate(Desk desk, LocalDate date) {
+        List<DeskBooking> existingBookings = bookingRepository.findByDeskAndBookingDate(desk, date);
+        
+        if (existingBookings.isEmpty()) {
+            return DeskStatus.VACANT;
+        } else {
+            return DeskStatus.BOOKED;
+        }
+    }
 }

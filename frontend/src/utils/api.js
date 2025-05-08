@@ -108,6 +108,7 @@ export const deskApi = {
   delete: (id) => api.delete(`/desks/${id}`),
   checkAvailability: (deskId, date) => 
     api.get(`/desks/available?deskId=${deskId}&date=${date}`),
+  getDeskStatusForDate: (date) => api.get(`/desks/status-for-date?date=${date}`),
   book: (bookingData) => api.post('/desks/bookings', bookingData),
   getBookings: (params) => api.get('/desks/bookings', { params }),
   cancelBooking: (id) => api.delete(`/desks/bookings/${id}`),

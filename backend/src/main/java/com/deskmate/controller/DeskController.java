@@ -15,7 +15,10 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/desks")
@@ -157,5 +160,25 @@ public class DeskController {
         } catch (Exception e) {
             throw new ResourceNotFoundException("Booking", "id", id);
         }
+    }
+    
+    @GetMapping("/status-for-date")
+    public ResponseEntity<List<Map<String, Object>>> getDeskStatusForDate(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        
+        List<Desk> allDesks = deskService.getAllDesks();
+        List<Map<String, Object>> deskStatusList = new ArrayList<>();
+        
+        for (Desk desk : allDesks) {
+            Map<String, Object> deskStatus = new HashMap<>();
+            deskStatus.put("deskId", desk.getId());
+            deskStatus.put("deskNumber", desk.getDeskNumber());
+            deskStatus.put("department", desk.getDepartment());
+            deskStatus.put("status", deskService.getDeskStatusForDate(desk, date));
+            
+            deskStatusList.add(deskStatus);
+        }
+        
+        return ResponseEntity.ok(deskStatusList);
     }
 }
